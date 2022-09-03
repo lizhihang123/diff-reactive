@@ -746,10 +746,10 @@ export const styleModule = {
 
 
 
-### 7.6 传入 vnode函数
+### 7.6 patch函数
 
 ```diff
-+ 传入新节点和旧的节点，旧节点oldVnode -> 可能是一个真实的dom元素
++ 传入新节点和旧的节点，注意 旧节点oldVnode -> 可能是一个真实的dom元素
 return function patch(oldVnode: VNode | Element, vnode: VNode): VNode {
     let i: number, elm: Node, parent: Node;
 + 记录被插入的 vnode队列 批量触发 insert更新 而不是 每次有更新就渲染
@@ -791,7 +791,7 @@ return function patch(oldVnode: VNode | Element, vnode: VNode): VNode {
 
 
 
-emptyNodeAt
+### emptyNodeAt
 
 ```diff
   function emptyNodeAt(elm: Element) {
@@ -806,3 +806,550 @@ emptyNodeAt
   }
 ```
 
+
+
+
+
+
+
+### createEle函数
+
+```diff
+function createElm(vnode: VNode, insertedVnodeQueue: VNodeQueue): Node {
++赋值 vnode.data给data
+    let i: any, data = vnode.data;
++如果data不是undefined 就接受 data.hook -> i -> i.init -> i 意思就是如果vnode里面的data有hook并且里面有init函数
+    if (data !== undefined) {
+      if (isDef(i = data.hook) && isDef(i = i.init)) {
++调用init函数 i(vnode)
+        i(vnode);
++为什么要重新赋值 因为调用init函数可能会影响 vnode.data的值
+        data = vnode.data;
+      }
+    }
+    let children = vnode.children, sel = vnode.sel;
++如果选择器是 ! 表明是注释节点
+    if (sel === '!') {
++如果test是undefined 就vnode.text = ''等于空
+      if (isUndef(vnode.text)) {
+        vnode.text = '';
+      }
++创建注释节点
+      vnode.elm = api.createComment(vnode.text as string);
+    } else if (sel !== undefined) {
++如果 sel不是 !， 而sel也不是 undefined
+      // Parse selector
++解析div#name.cls
+      const hashIdx = sel.indexOf('#');
++先id 后class
+      const dotIdx = sel.indexOf('.', hashIdx);
+      const hash = hashIdx > 0 ? hashIdx : sel.length;
+      const dot = dotIdx > 0 ? dotIdx : sel.length;
+      const tag = hashIdx !== -1 || dotIdx !== -1 ? sel.slice(0, Math.min(hash, dot)) : sel;
++要么创建“有命名空间的元素”，要么创建普通的dom元素，判断条件是 data里面是否有ns data就是vnode.data
+      const elm = vnode.elm = isDef(data) && isDef(i = (data as VNodeData).ns) ? api.createElementNS(i, tag)
+                                                                               : api.createElement(tag);
+      if (hash < dot) elm.setAttribute('id', sel.slice(hash + 1, dot));
+      if (dotIdx > 0) elm.setAttribute('class', sel.slice(dot + 1).replace(/\./g, ' '));
++触发全局的钩子函数“create”
+      for (i = 0; i < cbs.create.length; ++i) cbs.create[i](emptyNode, vnode);
++判断是否有孩子 如果有
+      if (is.array(children)) {
+        for (i = 0; i < children.length; ++i) {
+          const ch = children[i];
+          if (ch != null) {
++孩子插入到当前的Vnode,并且这个子元素节点要在 insertedVnodeQueue 里面做记录
++这里使用了递归
+            api.appendChild(elm, createElm(ch as VNode, insertedVnodeQueue));
+          }
+        }
++如果没有孩子 children 就创建文本节点 
+      } else if (is.primitive(vnode.text)) {
+        api.appendChild(elm, api.createTextNode(vnode.text));
+      }
++到这里 dom节点创建完毕 但是没有渲染，注意，没有渲染到页面 只是创建好
+
+
+      i = (vnode.data as VNodeData).hook; // Reuse variable
+      if (isDef(i)) {
+
+        if (i.create) i.create(emptyNode, vnode);
++把insert钩子函数 加入到 insertedVnodeQueue 队列 到时候是一次性insert很多个dom，不是一个一个触发
+        if (i.insert) insertedVnodeQueue.push(vnode);
+      }
+    } else {
++sel是undefined 没有选择器 -> 就是文本节点
+      vnode.elm = api.createTextNode(vnode.text as string);
+    }
+    return vnode.elm;
+  }
+```
+
+
+
+### removeVNodes函数
+
+这个函数 用来删除节点，结合`invokeDestroyHook`函数和`createRmCb`函数
+
+```diff
++传入四个参数，parentElm是父节点，从这个父节点里面删除vnodes，注意 vnodes 是数组
+function removeVnodes(parentElm: Node,
+                        vnodes: Array<VNode>,
+                        startIdx: number,
+                        endIdx: number): void {
++进行遍历
+    for (; startIdx <= endIdx; ++startIdx) {
++listeners是计数器 -> 给全局的 remove方法计数 cbs.remove.length
+
++ch的值就是 [oldVNodes]里面的酒节点
+      let i: any, listeners: number, rm: () => void, ch = vnodes[startIdx];
+      if (ch != null) {
+        if (isDef(ch.sel)) {
++调用destroy钩子函数
+          invokeDestroyHook(ch);
+          listeners = cbs.remove.length + 1;
++调用 createRmCb函数 返回的也是一个函数
++传入旧节点和计数器
+          rm = createRmCb(ch.elm as Node, listeners);
++调用全局的remove钩子 每次调用 就listeners减一
+          for (i = 0; i < cbs.remove.length; ++i) cbs.remove[i](ch, rm);
++调用ch.data.hook方法里面的remove,传入纠结点ch和rm函数
+          if (isDef(i = ch.data) && isDef(i = i.hook) && isDef(i = i.remove)) {
+            i(ch, rm);
+          } else {
++如果说 ch里面都没有data.hook.remove 就直接调用 rm函数删除 确保能够删除
+也就是看 vnodes[startIndex].data.hook.remove
+            rm();
+          }
+        } else { // Text node
++文本节点 直接删除
+          api.removeChild(parentElm, ch.elm as Node);
+        }
+      }
+    }
+  }
+```
+
+
+
+
+
+### createRmCb函数
+
+主要是利用这个函数 进行节点的删除
+
+```diff
+  function createRmCb(childElm: Node, listeners: number) {
+    return function rmCb() {
+      if (--listeners === 0) {
+        const parent = api.parentNode(childElm);
+        api.removeChild(parent, childElm);
+      }
+    };
+  }
+```
+
+
+
+
+
+
+
+### addVNodes
+
+作用：把真实的dom 插入到 指定的父节点之前
+
+```diff
+  function addVnodes(parentElm: Node,
+                     before: Node | null,
+                     vnodes: Array<VNode>,
+                     startIdx: number,
+                     endIdx: number,
+                     insertedVnodeQueue: VNodeQueue) {
+    for (; startIdx <= endIdx; ++startIdx) {
++拿到 vnodes[startIndex] -> oldVnode
+      const ch = vnodes[startIdx];
++ch不是null 就调用 createElm(ch, insertedVnodeQueue) 把 ch这个虚拟dom 创建为真实的dom -> 插入到 before前面
+      if (ch != null) {
+        api.insertBefore(parentElm, createElm(ch, insertedVnodeQueue), before);
+      }
+    }
+  }
+```
+
+
+
+
+
+### patchVNode
+
+1. patchVNode和patch有什么区别 -> 在patchVNode函数里面调用了 patch函数
+
+>作用：
+>
+>最最重要的就是，进行当前新的节点和旧的节点 + 当前新的节点的children 与 旧的节点的 children的比较，后者里面利用了 updateChidlren的diff算法的比较
+
+```diff
+function patchVnode(oldVnode: VNode, vnode: VNode, insertedVnodeQueue: VNodeQueue) {
+    let i: any, hook: any;
+    if (isDef(i = vnode.data) && isDef(hook = i.hook) && isDef(i = hook.prepatch)) {
+      i(oldVnode, vnode);
+    }
+    const elm = vnode.elm = (oldVnode.elm as Node);
+    /* 
+    请知道 oldVnode -> 旧节点的信息
+    vnode -> 新节点的信息
+    oldCh -> 旧节点的children
+    ch -> vnode.children 新节点的children
+    */
+    let oldCh = oldVnode.children;
+    let ch = vnode.children;
++1. 比较的是新旧节点的内存地址 如果相同 说明内容根本没变化 -》直接return
+    if (oldVnode === vnode) return;
++2. vnode是新的节点 如果data不是 undefined
+    if (vnode.data !== undefined) {
++2.1 调用全局的update函数 cbs[i].update()方法
+      for (i = 0; i < cbs.update.length; ++i) cbs.update[i](oldVnode, vnode);
+      i = vnode.data.hook;
++2.2 如果用户传递进来了hook在data里面，也就是h函数的第二个参数，
+      if (isDef(i) && isDef(i = i.update)) i(oldVnode, vnode);
+    }
++3. vnode 新的节点没有text 
+    if (isUndef(vnode.text)) {
++3.1 新旧节点 是否都有children 如果都有的话
+      if (isDef(oldCh) && isDef(ch)) {
++3.2 判断 新节点和旧节点的children是否相等 不相等 就 updateChildren
++updateChildren这个方法 非常重要 里面涉及diff算法，是更新子节点的重中之重
+        if (oldCh !== ch) updateChildren(elm, oldCh as Array<VNode>, ch as Array<VNode>, insertedVnodeQueue);
++3.3 ch - 新的节点； oldCh - 旧的节点 如果说新的节点有children 大那是 oldCh没有children
+      } else if (isDef(ch)) {
++3.4 旧的节点 有text -> 清空旧节点的内容，elm来自oldVnode
++    const elm = vnode.elm = (oldVnode.elm as Node);
+        if (isDef(oldVnode.text)) api.setTextContent(elm, '');
++    add -》添加所有的子节点 ch是一个数组
+        addVnodes(elm, null, ch as Array<VNode>, 0, (ch as Array<VNode>).length - 1, insertedVnodeQueue);
+      } else if (isDef(oldCh)) 
++  	 老节点有children 但是新节点没有 删除老节点里面的children
+        removeVnodes(elm, oldCh as Array<VNode>, 0, (oldCh as Array<VNode>).length - 1);
++ 	 新旧都没有children 老节点里面有text 清空它
+      } else if (isDef(oldVnode.text)) {
+        api.setTextContent(elm, '');
+      }
++    新节点有text -> 老节点也有
+    } else if (oldVnode.text !== vnode.text) {
++ 	 如果老节点有 children 删除干掉他
+      if (isDef(oldCh)) {
+        removeVnodes(elm, oldCh as Array<VNode>, 0, (oldCh as Array<VNode>).length - 1);
+      }
++     修改内容
+      api.setTextContent(elm, vnode.text as string);
+    }
+    if (isDef(hook) && isDef(i = hook.postpatch)) {
+      i(oldVnode, vnode);
+    }
+  }
+```
+
+
+
+
+
+
+
+
+
+### updateChildren方法
+
+>注意，`patch`和`updateChildren`是diff算法里面的重中之重
+
+四种比较情况的列举：
+
+`updateChildren`源码，我把上面的代码拆成了6个部分，一个部分一个部分的去分析，不用害怕
+
+```diff
+function updateChildren(parentElm: Node,
+                          oldCh: Array<VNode>,
+                          newCh: Array<VNode>,
+                          insertedVnodeQueue: VNodeQueue) {
++1 
+    let oldStartIdx = 0, newStartIdx = 0; // 旧dom树的起始索引，新dom树的起始索引
+    let oldEndIdx = oldCh.length - 1; // 旧dom树的结尾索引
+    let oldStartVnode = oldCh[0]; // oldCh是旧的节点数，oldStartVnode是旧的节点的第一个
+    let oldEndVnode = oldCh[oldEndIdx]; // 旧dom节点的最后一个
+    let newEndIdx = newCh.length - 1; // 新dom的最后一个节点索引
+    let newStartVnode = newCh[0]; // 新的起始节点
+    let newEndVnode = newCh[newEndIdx]; // 新dom的树的最后一个节点
+    let oldKeyToIdx: any;
+    let idxInOld: number;
+    let elmToMove: VNode;
+    let before: any;
++2  while循环 注意start都必须小于等于end
+    while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
+    // oldStartVnode如果是空，就让索引++获取新的节点 下面的类推
+      if (oldStartVnode == null) {
+        oldStartVnode = oldCh[++oldStartIdx]; // Vnode might have been moved left
+      } else if (oldEndVnode == null) {
+        oldEndVnode = oldCh[--oldEndIdx];
+      } else if (newStartVnode == null) {
+        newStartVnode = newCh[++newStartIdx];
+      } else if (newEndVnode == null) {
+        newEndVnode = newCh[--newEndIdx];
++3
+      } else if (sameVnode(oldStartVnode, newStartVnode)) {
+        patchVnode(oldStartVnode, newStartVnode, insertedVnodeQueue);
+        oldStartVnode = oldCh[++oldStartIdx];
+        newStartVnode = newCh[++newStartIdx];
+      } else if (sameVnode(oldEndVnode, newEndVnode)) {
+        patchVnode(oldEndVnode, newEndVnode, insertedVnodeQueue);
+        oldEndVnode = oldCh[--oldEndIdx];
+        newEndVnode = newCh[--newEndIdx];
+      } else if (sameVnode(oldStartVnode, newEndVnode)) { // Vnode moved right
+        patchVnode(oldStartVnode, newEndVnode, insertedVnodeQueue);
+        api.insertBefore(parentElm, oldStartVnode.elm as Node, api.nextSibling(oldEndVnode.elm as Node));
+        oldStartVnode = oldCh[++oldStartIdx];
+        newEndVnode = newCh[--newEndIdx];
+      } else if (sameVnode(oldEndVnode, newStartVnode)) { // Vnode moved left
+        patchVnode(oldEndVnode, newStartVnode, insertedVnodeQueue);
+        api.insertBefore(parentElm, oldEndVnode.elm as Node, oldStartVnode.elm as Node);
+        oldEndVnode = oldCh[--oldEndIdx];
+        newStartVnode = newCh[++newStartIdx];
+      } else {
++4
+        if (oldKeyToIdx === undefined) {
+          oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx);
+        }
+        idxInOld = oldKeyToIdx[newStartVnode.key as string];
+        if (isUndef(idxInOld)) { // New element
+          api.insertBefore(parentElm, createElm(newStartVnode, insertedVnodeQueue), oldStartVnode.elm as Node);
+          newStartVnode = newCh[++newStartIdx];
+        } else {
++5
+          elmToMove = oldCh[idxInOld];
+          if (elmToMove.sel !== newStartVnode.sel) {
+            api.insertBefore(parentElm, createElm(newStartVnode, insertedVnodeQueue), oldStartVnode.elm as Node);
+          } else {
+            patchVnode(elmToMove, newStartVnode, insertedVnodeQueue);
+            oldCh[idxInOld] = undefined as any;
+            api.insertBefore(parentElm, (elmToMove.elm as Node), oldStartVnode.elm as Node);
+          }
+          newStartVnode = newCh[++newStartIdx];
+        }
+      }
+    }
++6
+    if (oldStartIdx <= oldEndIdx || newStartIdx <= newEndIdx) {
+      if (oldStartIdx > oldEndIdx) {
+        before = newCh[newEndIdx+1] == null ? null : newCh[newEndIdx+1].elm;
+        addVnodes(parentElm, before, newCh, newStartIdx, newEndIdx, insertedVnodeQueue);
+      } else {
+        removeVnodes(parentElm, oldCh, oldStartIdx, oldEndIdx);
+      }
+    }
+  }
+```
+
+
+
+
+
+diff算法：
+
+1. 依据真实的dom，生成虚拟的dom树
+2. 依照层级，一层一层对比新旧的dom，比较的一句依靠sameVnode方法(每个Vnode的 sel和key)，
+3. 如果有不同，就会进行更新。更新依赖的是 patchVnode方法
+
+
+
+
+
+#### 第一种情况
+
+1. 比较新dom的(新的虚拟dom树的某一个层级)开始节点和旧dom树的开始节点
+
+- 如果相同(sameVnode)，就更新索引值，旧dom(oldStartIdx)和新dom(newStartIdx)的索引值都加1
+
+- 如果不相同，就转化为比较， 旧dom树的结尾节点和新dom树的结尾节点，如果相同
+  - 索引值都减1
+  - 如果不相同 进行下一种情况
+
+如下图，第一个红色框，表示首先比较起始节点，利用sameVnode,如果相同，就走patchVnode
+
+如果不相同，就去第二个红色框。相同，就让 startIndex
+
+
+
+
+
+![image-20220903184203717](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220903184203717.png)
+
+序号3的代码，对应上图，
+
+```diff
+      // 起始新节点和起始旧节点是否同？
+      } else if (sameVnode(oldStartVnode, newStartVnode)) {
+        // 相同就更新
+        patchVnode(oldStartVnode, newStartVnode, insertedVnodeQueue);
+        // 索引都++,获取到下一组dom，然后下一次循环，再次判断是否相等
+        oldStartVnode = oldCh[++oldStartIdx];
+        newStartVnode = newCh[++newStartIdx];
+      } else if (sameVnode(oldEndVnode, newEndVnode)) {
+        // 看看结尾新节点和结尾旧节点是否相同，相同就调用patchVnode
+        // 索引都--，往前面去看
+        patchVnode(oldEndVnode, newEndVnode, insertedVnodeQueue);
+        oldEndVnode = oldCh[--oldEndIdx];
+        newEndVnode = newCh[--newEndIdx];
+```
+
+
+
+
+
+#### 第二种情况
+
+旧dom的开始节点 vs 新dom树的结尾节点
+
+如果旧dom树的开始节点和新dom树的结尾节点相同，调用patchVnode,旧dom树的`oldStartIdx` 指向的节点 移动到最右侧，如下图所示。`oldStartIdx的索引要++，newEndIdx索引要--`
+
+![image-20220903185236204](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220903185236204.png)
+
+```diff
+      // 判同
+      } else if (sameVnode(oldStartVnode, newEndVnode)) { // Vnode moved right
+      // 打补丁，进行更新
+        patchVnode(oldStartVnode, newEndVnode, insertedVnodeQueue);
+        // 移动节点 把oldStartVnode 移动到 oldEndVnode 的兄弟的前面，
+        api.insertBefore(parentElm, oldStartVnode.elm as Node, api.nextSibling(oldEndVnode.elm as Node));
+        // oldStartIdx索引++，获取下一个节点
+        oldStartVnode = oldCh[++oldStartIdx];
+        // newEndIdx -- 往后退
+        newEndVnode = newCh[--newEndIdx];
+      }
+```
+
+
+
+存在疑问：此时，原本的位置的节点是否还会存在？
+
+insertBefore的理解？
+
+nextSibling的使用
+
+
+
+#### 第三种情况
+
+如果说，上面的情况不满足，
+
+就要比较，旧的dom树的结尾节点 vs 新的dom树的开始节点。如果相等：
+
+- 调用patch
+- 旧dom树结尾节点 移动到最前面
+- 旧dom的 index--，而新dom的index++
+
+![image-20220903185813142](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220903185813142.png)
+
+```diff
+     
+     } else if (sameVnode(oldEndVnode, newStartVnode)) { // Vnode moved left
+     // 打补丁
+        patchVnode(oldEndVnode, newStartVnode, insertedVnodeQueue);
+     // 把旧dom树结尾节点 插入到 旧dom树的最开头的前面
+        api.insertBefore(parentElm, oldEndVnode.elm as Node, oldStartVnode.elm as Node);
+      // 索引更新
+        oldEndVnode = oldCh[--oldEndIdx];
+        newStartVnode = newCh[++newStartIdx];
+      } 
+```
+
+
+
+
+
+#### 第四种情况：
+
+1. 拿到新dom树里面的节点的key
+
+2. 拿着这个key去旧的dom树对象里面去找，是否有相同的节点
+
+3. 如果找到相同的节点
+
+   3.1 判断是否有 同样的选择器
+
+   3.2 如果key相同，但是选择器不同，这样也不行，要重新创建dom节点，插入到旧dom树的最开头的前面
+
+   3.3 如果key相同，选择器也相同，就是同一个节点，patchVnode进行更新，把这个节点 插入到最前面 然后让newStartIdx的索引值++
+
+4. 如果找不到相同的节点
+
+   4.1 说明是新的节点 直接创建新的 并且插入到旧dom树的起始节点
+
+   4.2 newStartIdx++即可
+
+```diff
+else {
+        if (oldKeyToIdx === undefined) {
+          oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx);
+        }
+        idxInOld = oldKeyToIdx[newStartVnode.key as string];
+        if (isUndef(idxInOld)) { // New element
+          api.insertBefore(parentElm, createElm(newStartVnode, insertedVnodeQueue), oldStartVnode.elm as Node);
+          newStartVnode = newCh[++newStartIdx];
+        } else {
+        // key 找到了 
+        // 取名 给 oldCh[idxInOld]取名Wie elmToMove
+          elmToMove = oldCh[idxInOld];
+          // 选择器
+          if (elmToMove.sel !== newStartVnode.sel) {
+            api.insertBefore(parentElm, createElm(newStartVnode, insertedVnodeQueue), oldStartVnode.elm as Node);
+          } else {
+          // 同一个节点
+            patchVnode(elmToMove, newStartVnode, insertedVnodeQueue);
+            oldCh[idxInOld] = undefined as any;
+            api.insertBefore(parentElm, (elmToMove.elm as Node), oldStartVnode.elm as Node);
+          }
+          newStartVnode = newCh[++newStartIdx];
+        }
+      }
+```
+
+
+
+
+
+#### 第五种情况
+
+这里的if判断存在的情况是
+
+1. oldStartIdx 《 oldEndIdx 但是 newStartIdx > newEndIdx 也能够满足  => 这种情况是 新dom树的子节点遍历完了
+
+   旧dom树剩下的就删掉 remove
+
+2. oldStartIdx > oldEndIdx 但是 newStartIdx 《 newEndIdx 也能够满足 => 这种情况是 旧dom树的子节点遍历完了
+
+   新dom树剩下的都是要创建 插入的
+
+3. oldStartIdx 《 oldEndIdx 且 newStartIdx 《 newEndIdx 也能够满足 => 这种情况是 新旧dom树都没有遍历完 这里也要删除
+
+4. 只有 oldStartIdx > oldEndIdx 并且 newStartIdx > newEndIdx 是不能够满足的 => 这种情况是 新旧dom树同时都遍历完了 就不额外操作
+
+```diff
+    if (oldStartIdx <= oldEndIdx || newStartIdx <= newEndIdx) {
+      if (oldStartIdx > oldEndIdx) {
+      // 新dom树剩下的都是要创建 插入的
+        before = newCh[newEndIdx+1] == null ? null : newCh[newEndIdx+1].elm;
+        addVnodes(parentElm, before, newCh, newStartIdx, newEndIdx, insertedVnodeQueue);
+      } else {
+      // 旧dom树剩下的就删掉 remove
+        removeVnodes(parentElm, oldCh, oldStartIdx, oldEndIdx);
+      }
+    }
+```
+
+
+
+
+
+>困惑：
+>
+>1. oldStartIdx 《 oldEndIdx 且 newStartIdx 《 newEndIdx  这种情况 旧dom也会删除完毕？
+>2. oldCh[idxInOld] = undefined as any; 第四种情况 这句代码不理解
