@@ -1,3 +1,26 @@
+目录：
+
+```diff
+1. 什么是虚拟dom
+2. 为什么要创建虚拟dom
+3. 虚拟dom不适合的场景
+4. snabbdom为什么要使用他呢？
+5. 模拟服务器使用snabbdom
+6. snabbdom源码的分析
+	6.1 h函数
+	6.2 vnode函数的使用
+	6.3 h函数和vnode函数执行流程
+	6.4 patch函数的使用
+	6.5 patch函数的分析
+		1. emptyNodeAt
+		2. createEle
+		3. removeVNodes
+		4. createRmCb
+		5. addVNodes
+		6. patchVNodes 重要
+		7. updateChildren方法的使用 重要
+```
+
 
 
 ## 1. 什么是虚拟dom
@@ -1353,3 +1376,23 @@ else {
 >
 >1. oldStartIdx 《 oldEndIdx 且 newStartIdx 《 newEndIdx  这种情况 旧dom也会删除完毕？
 >2. oldCh[idxInOld] = undefined as any; 第四种情况 这句代码不理解
+
+
+
+
+
+第五种情况画图：
+
+updateChildren画图：
+
+createElm画图：
+
+
+
+
+
+![image-20220903192919570](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220903192919570.png)
+
+
+参考：
+https://segmentfault.com/a/1190000009017349
