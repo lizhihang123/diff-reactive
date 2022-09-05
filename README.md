@@ -771,6 +771,10 @@ export const styleModule = {
 
 ### 7.6 patch函数
 
+>比较当前，同层的节点，是否为同一个类型的标签，如果是，调用patchVnode进行对比
+>
+>如果不是同一个类型，直接创建新的节点
+
 ```diff
 + 传入新节点和旧的节点，注意 旧节点oldVnode -> 可能是一个真实的dom元素
 return function patch(oldVnode: VNode | Element, vnode: VNode): VNode {
@@ -816,6 +820,8 @@ return function patch(oldVnode: VNode | Element, vnode: VNode): VNode {
 
 ### emptyNodeAt
 
+>
+
 ```diff
   function emptyNodeAt(elm: Element) {
 + 查看 有没有id属性，有的话 就拼上#号
@@ -836,6 +842,8 @@ return function patch(oldVnode: VNode | Element, vnode: VNode): VNode {
 
 
 ### createEle函数
+
+>传入虚拟节点和插入队列数组，创建真实的dom节点
 
 ```diff
 function createElm(vnode: VNode, insertedVnodeQueue: VNodeQueue): Node {
@@ -876,6 +884,11 @@ function createElm(vnode: VNode, insertedVnodeQueue: VNodeQueue): Node {
       if (dotIdx > 0) elm.setAttribute('class', sel.slice(dot + 1).replace(/\./g, ' '));
 +触发全局的钩子函数“create”
       for (i = 0; i < cbs.create.length; ++i) cbs.create[i](emptyNode, vnode);
+```
+
+紧接着下半部分
+
+```diff
 +判断是否有孩子 如果有
       if (is.array(children)) {
         for (i = 0; i < children.length; ++i) {
@@ -962,10 +975,12 @@ function removeVnodes(parentElm: Node,
 主要是利用这个函数 进行节点的删除
 
 ```diff
-  function createRmCb(childElm: Node, listeners: number) {
+
+ function createRmCb(childElm: Node, listeners: number) {
     return function rmCb() {
       if (--listeners === 0) {
         const parent = api.parentNode(childElm);
++删除parent中的childElm节点      
         api.removeChild(parent, childElm);
       }
     };
@@ -1006,11 +1021,8 @@ function removeVnodes(parentElm: Node,
 
 ### patchVNode
 
-1. patchVNode和patch有什么区别 -> 在patchVNode函数里面调用了 patch函数
+1. 作用：最最重要的就是，进行当前新的节点和旧的节点 + 当前新的节点的children 与 旧的节点的 children的比较，后者里面利用了 updateChidlren的diff算法的比较
 
->作用：
->
->最最重要的就是，进行当前新的节点和旧的节点 + 当前新的节点的children 与 旧的节点的 children的比较，后者里面利用了 updateChidlren的diff算法的比较
 
 ```diff
 function patchVnode(oldVnode: VNode, vnode: VNode, insertedVnodeQueue: VNodeQueue) {
@@ -1018,6 +1030,7 @@ function patchVnode(oldVnode: VNode, vnode: VNode, insertedVnodeQueue: VNodeQueu
     if (isDef(i = vnode.data) && isDef(hook = i.hook) && isDef(i = hook.prepatch)) {
       i(oldVnode, vnode);
     }
++找到旧的虚拟节点 对应的真实的dom元素
     const elm = vnode.elm = (oldVnode.elm as Node);
     /* 
     请知道 oldVnode -> 旧节点的信息
@@ -1108,36 +1121,43 @@ function updateChildren(parentElm: Node,
     let before: any;
 +2  while循环 注意start都必须小于等于end
     while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
++ 如果旧dom树的开始节点为空，索引值++ 就往后移动一位 
     // oldStartVnode如果是空，就让索引++获取新的节点 下面的类推
       if (oldStartVnode == null) {
         oldStartVnode = oldCh[++oldStartIdx]; // Vnode might have been moved left
       } else if (oldEndVnode == null) {
++ 如果旧的结尾节点为空，索引值--，让后往前移动一位
         oldEndVnode = oldCh[--oldEndIdx];
       } else if (newStartVnode == null) {
         newStartVnode = newCh[++newStartIdx];
       } else if (newEndVnode == null) {
         newEndVnode = newCh[--newEndIdx];
-+3
++3 这里简单提一下， 下面会分情况来进行分析
+
++3.1 旧dom开始节点 和 新dom的开始节点如果相同的情况
       } else if (sameVnode(oldStartVnode, newStartVnode)) {
         patchVnode(oldStartVnode, newStartVnode, insertedVnodeQueue);
         oldStartVnode = oldCh[++oldStartIdx];
         newStartVnode = newCh[++newStartIdx];
++3.2 上面不满足，来到旧dom结束节点 和 新dom的结束节点如果相同的情况
       } else if (sameVnode(oldEndVnode, newEndVnode)) {
         patchVnode(oldEndVnode, newEndVnode, insertedVnodeQueue);
         oldEndVnode = oldCh[--oldEndIdx];
         newEndVnode = newCh[--newEndIdx];
++3.3 上面不满足，来到,旧dom开始节点 和 新dom的结束节点如果相同的情况
       } else if (sameVnode(oldStartVnode, newEndVnode)) { // Vnode moved right
         patchVnode(oldStartVnode, newEndVnode, insertedVnodeQueue);
         api.insertBefore(parentElm, oldStartVnode.elm as Node, api.nextSibling(oldEndVnode.elm as Node));
         oldStartVnode = oldCh[++oldStartIdx];
         newEndVnode = newCh[--newEndIdx];
++3.4 上面不满足，来到,旧dom结束节点 和 新dom的开始节点如果相同的情况
       } else if (sameVnode(oldEndVnode, newStartVnode)) { // Vnode moved left
         patchVnode(oldEndVnode, newStartVnode, insertedVnodeQueue);
         api.insertBefore(parentElm, oldEndVnode.elm as Node, oldStartVnode.elm as Node);
         oldEndVnode = oldCh[--oldEndIdx];
         newStartVnode = newCh[++newStartIdx];
       } else {
-+4
++4 上面不满足 来到 这里。通过 “newStartVnode.key” 这个key【注意 这是新dom树开头节点的key】 去旧dom树里面查找，如果找到
         if (oldKeyToIdx === undefined) {
           oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx);
         }
@@ -1181,7 +1201,7 @@ diff算法：
 2. 依照层级，一层一层对比新旧的dom，比较的一句依靠sameVnode方法(每个Vnode的 sel和key)，
 3. 如果有不同，就会进行更新。更新依赖的是 patchVnode方法
 
-
+4. 最终所有的结果都要以 newVNode为准，
 
 
 
@@ -1189,21 +1209,23 @@ diff算法：
 
 1. 比较新dom的(新的虚拟dom树的某一个层级)开始节点和旧dom树的开始节点
 
-- 如果相同(sameVnode)，就更新索引值，旧dom(oldStartIdx)和新dom(newStartIdx)的索引值都加1
-
-- 如果不相同，就转化为比较， 旧dom树的结尾节点和新dom树的结尾节点，如果相同
-  - 索引值都减1
-  - 如果不相同 进行下一种情况
+如果相同(sameVnode)，就更新索引值，旧dom(oldStartIdx)和新dom(newStartIdx)的索引值都加1
 
 如下图，第一个红色框，表示首先比较起始节点，利用sameVnode,如果相同，就走patchVnode
 
-如果不相同，就去第二个红色框。相同，就让 startIndex
+
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904134454447.png" alt="image-20220904134454447" style="zoom:50%;" />
+
+如果不相同，就转化为比较， 旧dom树的结尾节点和新dom树的结尾节点，如果相同
+
+索引值都减1
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904135145922.png" alt="image-20220904135145922" style="zoom:50%;" />
 
 
 
 
-
-![image-20220903184203717](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220903184203717.png)
 
 序号3的代码，对应上图，
 
@@ -1233,7 +1255,7 @@ diff算法：
 
 如果旧dom树的开始节点和新dom树的结尾节点相同，调用patchVnode,旧dom树的`oldStartIdx` 指向的节点 移动到最右侧，如下图所示。`oldStartIdx的索引要++，newEndIdx索引要--`
 
-![image-20220903185236204](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220903185236204.png)
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904135708060.png" alt="image-20220904135708060" style="zoom:50%;" />
 
 ```diff
       // 判同
@@ -1269,7 +1291,7 @@ nextSibling的使用
 - 旧dom树结尾节点 移动到最前面
 - 旧dom的 index--，而新dom的index++
 
-![image-20220903185813142](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220903185813142.png)
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904135940457.png" alt="image-20220904135940457" style="zoom:50%;" />
 
 ```diff
      
@@ -1308,28 +1330,51 @@ nextSibling的使用
 
    4.2 newStartIdx++即可
 
+
+
+key和sel选择器都相同
+
+注意，后续newS++，再次循环
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904140707280.png" alt="image-20220904140707280" style="zoom:50%;" />
+
+
+
+
+
+key和sel不相同时,如下图，会心创建一个F节点，插入到最前面。
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904141149655.png" alt="image-20220904141149655" style="zoom:50%;" />
+
 ```diff
 else {
++oldKeyToIdx如果是undefined 就传入 oldCh(旧的子节点) 开始结束索引 给到 createKeyToOldIdx这个方法 返回的是一个map对象 可以通过key 匹配到节点
         if (oldKeyToIdx === undefined) {
           oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx);
         }
++通过新dom树的开始节点的key，去上面的map对象里面，进行匹配
         idxInOld = oldKeyToIdx[newStartVnode.key as string];
++匹配不到，创建节点，插入到 旧dom树最开头
         if (isUndef(idxInOld)) { // New element
           api.insertBefore(parentElm, createElm(newStartVnode, insertedVnodeQueue), oldStartVnode.elm as Node);
           newStartVnode = newCh[++newStartIdx];
         } else {
-        // key 找到了 
++匹配待了
         // 取名 给 oldCh[idxInOld]取名Wie elmToMove
           elmToMove = oldCh[idxInOld];
           // 选择器
++选择器不同 不是同一个元素 尽管key相同 创建插入
           if (elmToMove.sel !== newStartVnode.sel) {
             api.insertBefore(parentElm, createElm(newStartVnode, insertedVnodeQueue), oldStartVnode.elm as Node);
           } else {
           // 同一个节点
++选择器相同 key相同 是同一个元素 patchVnode打补丁更新
             patchVnode(elmToMove, newStartVnode, insertedVnodeQueue);
++b把原本的那个虚拟dom会删除掉
             oldCh[idxInOld] = undefined as any;
             api.insertBefore(parentElm, (elmToMove.elm as Node), oldStartVnode.elm as Node);
           }
++新dom树的索引++ 进入下一个节点 再去匹配
           newStartVnode = newCh[++newStartIdx];
         }
       }
@@ -1339,7 +1384,7 @@ else {
 
 
 
-#### 第五种情况
+#### while循环结束时
 
 这里的if判断存在的情况是
 
@@ -1353,16 +1398,18 @@ else {
 
 3. oldStartIdx 《 oldEndIdx 且 newStartIdx 《 newEndIdx 也能够满足 => 这种情况是 新旧dom树都没有遍历完 这里也要删除
 
-4. 只有 oldStartIdx > oldEndIdx 并且 newStartIdx > newEndIdx 是不能够满足的 => 这种情况是 新旧dom树同时都遍历完了 就不额外操作
+`这里是我的疑惑 如果旧dom树和新的dom树都没有匹配完，怎么处理`
+
+1. 只有 oldStartIdx > oldEndIdx 并且 newStartIdx > newEndIdx 是不能够满足的 => 这种情况是 新旧dom树同时都遍历完了 就不额外操作
 
 ```diff
     if (oldStartIdx <= oldEndIdx || newStartIdx <= newEndIdx) {
       if (oldStartIdx > oldEndIdx) {
-      // 新dom树剩下的都是要创建 插入的
++      // 旧dom树匹配完了，新dom树有多余的
         before = newCh[newEndIdx+1] == null ? null : newCh[newEndIdx+1].elm;
         addVnodes(parentElm, before, newCh, newStartIdx, newEndIdx, insertedVnodeQueue);
       } else {
-      // 旧dom树剩下的就删掉 remove
++      // 新dom树匹配完了，就dom树多余的剩下的，就删掉
         removeVnodes(parentElm, oldCh, oldStartIdx, oldEndIdx);
       }
     }
@@ -1379,13 +1426,77 @@ else {
 
 
 
+#### 旧dom树数量多于新dom树的数量时
+
+1. 此时oldS === newE
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904141908471.png" alt="image-20220904141908471" style="zoom:50%;" />
 
 
-第五种情况画图：
 
-updateChildren画图：
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904142113330.png" alt="image-20220904142113330" style="zoom:50%;" />
 
-createElm画图：
+下一步，一上来比较 比较oldS和newS
+
+![image-20220904142306291](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904142306291.png)
+
+
+
+下一步，更新 移动节点
+
+![image-20220904142420490](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904142420490.png)
+
+newS和oldS都要++
+
+
+
+下一步：
+
+因为最前面的几种情况都不满足，就要通过key来进行匹配。key也匹配不到，就要创建节点，插入到最前面
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904142914000.png" alt="image-20220904142914000" style="zoom:50%;" />
+
+然后newS++，发现newS 大于 newE。退出while循环。
+
+进入if判断，最终要进行remove
+
+
+
+#### 新dom数量多于旧dom时
+
+1. oldS和newS不相等，
+2. oldE和newE不相等
+3. oldS和newE相等，满足 -> patchVnode 更新
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904145719907.png" alt="image-20220904145719907" style="zoom:50%;" />
+
+4. 然后真实的dom移动到末尾，删除原本位置的dom
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904145906607.png" alt="image-20220904145906607" style="zoom:50%;" />
+
+
+
+5. 下一次循环时，oldS和newS比较，发现相等
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904150032515.png" alt="image-20220904150032515" style="zoom:50%;" />
+
+
+
+6. 下一步，前面四种情况都不满足，就用key去找，key也找不到
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904150225679.png" alt="image-20220904150225679" style="zoom:50%;" />
+
+7. 创建新的dom节点，移动到最前面
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904150350568.png" alt="image-20220904150350568" style="zoom:50%;" />
+
+8. 下一步，M节点，发现还是找不到，就利用key，也找不到，要创建M节点，放到最前面，
+
+![image-20220904150558432](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220904150558432.png)
+
+此时，newS,超过了newE,跳出循环。同时删除旧dom树的G节点
+
+
 
 
 
