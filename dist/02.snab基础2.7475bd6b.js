@@ -766,30 +766,43 @@ function init(modules, domApi) {
     return vnode;
   };
 }
-},{"./vnode":"node_modules/snabbdom/es/vnode.js","./is":"node_modules/snabbdom/es/is.js","./htmldomapi":"node_modules/snabbdom/es/htmldomapi.js","./h":"node_modules/snabbdom/es/h.js","./thunk":"node_modules/snabbdom/es/thunk.js"}],"src/01basic-usage.js":[function(require,module,exports) {
+},{"./vnode":"node_modules/snabbdom/es/vnode.js","./is":"node_modules/snabbdom/es/is.js","./htmldomapi":"node_modules/snabbdom/es/htmldomapi.js","./h":"node_modules/snabbdom/es/h.js","./thunk":"node_modules/snabbdom/es/thunk.js"}],"src/02.snab基础2.js":[function(require,module,exports) {
 "use strict";
 
 var _snabbdom = require("snabbdom");
 
-// 调用 init函数 
-var patch = (0, _snabbdom.init)([]); // init里面跟的是数组 里面的参数是模块 我们暂时不用模块 返回的是一个 高阶的函数 patch
-// patch 是对比旧的和新的dom的差异,然后更新到真实的dom中
-// 创建虚拟节点
-// h函数第二个参数 如果是字符串 就是内容
+// 1.获得patch函数
+var patch = (0, _snabbdom.init)([]); // 2.创建虚拟节点
 
-var Vnode = (0, _snabbdom.h)('div#container.cls', 'hello world'); // 获取容器
+var vnode = (0, _snabbdom.h)('div#container.cls', 'hello world'); // 获取容器
 
-var app = document.querySelector('#app'); // 通过patch函数 对比新旧虚拟dom 渲染虚拟dom 为另一个虚拟dom
-// patch的第一个dom也可以是真实的dom patch会将真实的dom转化为虚拟dom
+var app = document.querySelector('#app'); // 3.通过patch函数 对比新旧的虚拟dom 找到差异 打补丁 渲染到页面上去
+// app是旧容器 
+// vnode是新的容器 新旧比较 多了hello world
 
-console.log(app.nodeType);
-console.log(app.nodeName);
-console.log(app.nodeValue);
-var oldVnode = patch(app, Vnode); // 假设服务端返回了新的数据 -> 要替换页面上的节点
+var oldVnode = patch(app, vnode); // 4.创建第二波虚拟节点
 
-var newVnode = (0, _snabbdom.h)('div', 'hello Vue');
-console.log(newVnode);
-patch(oldVnode, newVnode);
+setTimeout(function () {
+  // 修改vnode的值 注意上面必须是let声明
+  vnode = (0, _snabbdom.h)('div#container.cls', [(0, _snabbdom.h)('h1', '我是服务器来的h1'), (0, _snabbdom.h)('h2', '我是服务器来的h2')]); // 打补丁时，记得第一个是旧的节点 vnode是更新后的节点
+
+  var oldVnode2 = patch(oldVnode, vnode);
+  console.log(oldVnode2);
+}, 3000);
+/* 
+小结：
+小结：
+
+1.h函数可以接受1~3个参数
+- 只有一个参数，创建的是一个空的节点。通过vnode方法
+- 两个参数。第二个参数是数组，假设里面是这样的最终返回的虚拟节点里面有children也会有两个子节点
+  vnode = h('div#container.cls', [
+      h('h1', '我是服务器来的h1'),
+      h('h2', '我是服务器来的h2')
+    ])
+2.
+
+*/
 },{"snabbdom":"node_modules/snabbdom/es/snabbdom.js"}],"node_modules/parcel-bundler/src/builtins/hmr-runtime.js":[function(require,module,exports) {
 var global = arguments[3];
 var OVERLAY_ID = '__parcel__error__overlay__';
@@ -818,7 +831,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "1147" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "8673" + '/');
 
   ws.onmessage = function (event) {
     checkedAssets = {};
@@ -994,5 +1007,5 @@ function hmrAcceptRun(bundle, id) {
     return true;
   }
 }
-},{}]},{},["node_modules/parcel-bundler/src/builtins/hmr-runtime.js","src/01basic-usage.js"], null)
-//# sourceMappingURL=/01basic-usage.7ec34e1f.js.map
+},{}]},{},["node_modules/parcel-bundler/src/builtins/hmr-runtime.js","src/02.snab基础2.js"], null)
+//# sourceMappingURL=/02.snab基础2.7475bd6b.js.map

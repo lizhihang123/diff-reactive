@@ -14,11 +14,13 @@ const app = document.querySelector('#app')
 
 // 通过patch函数 对比新旧虚拟dom 渲染虚拟dom 为另一个虚拟dom
 // patch的第一个dom也可以是真实的dom patch会将真实的dom转化为虚拟dom
-debugger
+console.log(app.nodeType);
+console.log(app.nodeName);
+console.log(app.nodeValue);
 const oldVnode = patch(app, Vnode)
 
 
 // 假设服务端返回了新的数据 -> 要替换页面上的节点
 const newVnode = h('div', 'hello Vue')
-debugger
-patch(oldVnode,newVnode )
+console.log(newVnode);
+patch(oldVnode, newVnode)

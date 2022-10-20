@@ -1,3 +1,7 @@
+按F11，进入内部源码
+
+
+
 目录：
 
 ```diff
@@ -31,10 +35,25 @@
 
 
 
+
+
 ## 2. 为什么要创建一个虚拟dom
 
-1. jquery + 模板字符穿，每次修改数据，删除原来所有，增加新的，无法去跟踪旧的状态，进行新旧的对比。频繁刷新页面
-3. 虚拟dom的方式，状态更新 不需要立即更新真实dom，而是创建虚拟dom，虚拟dom内部会去分析如何更新，通常是通过diff算法来进行更新。虚拟dom，会跟踪程序的状态，记录旧的状态，比较两次的差异，来更新真实的dom。而且对象的属性也大大减少了
+一种可以测出节点属性数量的方式
+
+```js
+for (var key in div) {str = str + key + ' '}
+```
+
+
+
+![image-20220905223514539](https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20220905223514539.png)
+
+1.jQuery，修改数据时，会直接删掉旧的，更新新的数据。然后会直接频繁的操作dom
+
+2.虚拟dom，不会直接立即去更新dom，而是利用虚拟dom结合diff算法，去比较dom节点内部的差异，记录旧的状态，比较新旧的状态。然后进行更新
+
+3.节点的属性很少
 
 
 
@@ -50,16 +69,20 @@
 
 ## 4. snabbdom的使用
 
+为什么要使用 snabbdom
+
+vue/src/core/vdom
+
+
+
 1. 下包 parce-bundler
 
-
-
-虚拟dom，内部使用了 snabbdom这个库
+vue的虚拟dom，内部使用了 snabbdom这个库
 
 核心：
 
 1. h函数， 创建虚拟dom
-2. init 返回的是一个高阶函数
+2. init 返回的是一个高阶函数 patch
 3. thunk 是一种优化的策略
 
 
@@ -84,6 +107,14 @@ const app = document.querySelector('#app')
 const oldVnode = patch(app, Vnode)
 
 ```
+
+
+
+小结：
+
+1.知道patch函数
+
+2.知道h函数
 
 
 
@@ -116,8 +147,21 @@ setTimeout(() => {
     // 利用patch 进行新旧dom节点的重新对比
     patch(oldVnode, vnode)
 }, 2000)
-
 ```
+
+
+
+小结：
+
+1.patch的第一个参数是旧的虚拟dom，第二个参数是更新后的虚拟dom
+
+2.patch的第一个参数也可以是真实的dom，第二个参数是更新后的虚拟dom
+
+3.patch函数返回的是什么值？
+
+返回的是一个虚拟的节点。
+
+`那么问题来了，虚拟的节点，是如何渲染到页面上的呢？`
 
 
 
@@ -125,8 +169,6 @@ setTimeout(() => {
 
 - 因为patch不能处理 样式 事件 属性设置这些
 - 所以snabbdom新增了 6个模块
-
-
 
 ```js
 1. attributes属性，能够处理布尔值(selected checked)。 调用 setAttribute设置属性
@@ -193,7 +235,7 @@ patch(app, vnode)
 
 作用：
 
->1. 创建JS对象， 创建虚拟dom。h函数最关键的就是利用`vnode方法`，创建返回一个`虚拟dom`
+>创建JS对象， 创建虚拟dom。h函数最关键的就是利用`vnode节点`，创建返回一个`虚拟dom`
 
 1. 知道h函数在vue里面做了修改，使得可以在组件里面使用；在snabbdom里面只能用来创建虚拟dom
 2. 理解函数重载概念
@@ -204,7 +246,6 @@ patch(app, vnode)
 
 ```js
 function fn (a,b) {
-
 ​	return a + b
 
 }
@@ -266,6 +307,37 @@ export default h;
 
 
 
+```js
+1. h函数可以接受1~3个参数
+- 只有一个参数，创建的是一个空的节点。通过vnode方法
+- 两个参数。第二个参数是数组，假设里面是这样的最终返回的虚拟节点里面有children也会有两个子节点
+  vnode = h('div#container.cls', [
+      h('h1', '我是服务器来的h1'),
+      h('h2', '我是服务器来的h2')
+    ])
+- 如果是三个参数的话，第三个参数可以是text，也可以是数组(里面是子节点);第二个参数可以是对象{}里面有style on -> 赋值给data
+  const vnode = h(
+    'button#container.cls',
+    {
+      // style属性和on事件
+      style: {
+        backgroundColor: 'red'
+      },
+      on: {
+        click: eventHandler
+      }
+    },
+    '点我触发按钮'
+  )
+*/
+```
+
+
+
+
+
+
+
 ### 7.2 vnode函数的使用
 
 ```js
@@ -275,7 +347,7 @@ export interface VNode {
     sel: string | undefined;
     // 跟模块的很多内容相关 类 属性 自定义属性 事件 样式 
     data: VNodeData | undefined;
-    // 子节点 和 children 是不会同时存在的
+    // text 和 children 是不会同时存在的
     children: Array<VNode | string> | undefined;
     // 虚拟dom -》 转化为真实dom 信息存储到 elm里面去
     elm: Node | undefined;
@@ -350,8 +422,6 @@ h('h1',{attrs: {name: '123'}}, '我是小h1')
 ```diff
 h('p', {style: { backgroundColor: 'pink' }}, '你好我是小p')
 ```
-
-
 
 第三个参数不是undefined,进入第一个if语句，
 
@@ -468,10 +538,6 @@ export declare function vnode(sel: string | undefined, data: any | undefined, ch
 
 
 
-
-
-
-
 此时最终的结果就是
 
 ```diff
@@ -509,7 +575,7 @@ function h(sel, b, c) {
     var data = {}, children, text, i;
 +    if (c !== undefined) {
         data = b;
-+        if (is.array(c)) {
++       if (is.array(c)) {
 +            children = c;
         }
         else if (is.primitive(c)) {
@@ -575,7 +641,7 @@ function h(sel, b, c) {
 生成
 
 ```diff
-    [
++    [
         {sel: 'p', data: {……}, ele: undefined, children: undefined, text:'你好我是小p', key: undefined}
         {sel: undefined， data: , ele: undefined, children: undefined, text:'132', key: undefined}
         {……text: '我是小h1', key: undefined}
@@ -603,7 +669,7 @@ function h(sel, b, c) {
             value: '123'
         }
   },
-  ele: 会记录真实dom的信息 -》 undefined，
++  ele: 会记录真实dom的信息 -》 undefined，
   children: [
         {sel: 'p', data: {……}, ele: undefined, children: undefined, text:'你好我是小p', key: undefined}
         {sel: undefined， data: , ele: undefined, children: undefined, text:'132', key: undefined}
@@ -613,9 +679,34 @@ function h(sel, b, c) {
  }
 ```
 
-
-
 后续会调用patch函数 渲染为真实的dom。上面只是渲染为虚拟dom
+
+
+
+**小结:**
+
+1. **h函数执行**，如果有嵌套，是从里面的h函数开始执行，再到外面的函数执行的。
+
+2. 传入三个参数，第一个参数是节点选择器，第二个参数可能是{}里面是模块，第三个参数可能是数组，也可能直接是内容。
+
+- 第二个参数赋值给data 
+- 第三个参数如果是数组赋值给children
+- 如果是字符或者数字，赋值给text
+- 如果是选择器，children = [c]
+- children里面是字符串或者数字，会再调用vnode进行渲染
+
+3.如果只有两个参数
+
+- 同样会有数组 文本 选择器的判断
+
+4.**vnode函数执行**
+
+- 返回的是一个js对象，里面的值 sel data text children elm key
+- 注意text和children只会出现一个
+
+<img src="https://typora-1309613071.cos.ap-shanghai.myqcloud.com/typora/image-20221020183422803.png" alt="image-20221020183422803" style="zoom:50%;" />
+
+
 
 
 
@@ -628,10 +719,6 @@ function h(sel, b, c) {
 4. 选择器相同，就比较text属性，看看是不是内容不同，
 5. 如果text相同，看看有没有chidlren属性，有的话，如果值不同，就要依靠diff算法来进行比较
 ```
-
-
-
-
 
 如何获取到patch函数的呢？
 
